@@ -3,6 +3,9 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "scrape": "bun run src/index.ts"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
@@ -12,4 +15,5 @@
   "dependencies": {
     "playwright": "^1.58.1"
   }
+}
 }

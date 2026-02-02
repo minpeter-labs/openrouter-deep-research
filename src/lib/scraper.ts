@@ -37,8 +37,8 @@ export async function scrapeRankings(): Promise<RankingEntry[]> {
     browser = await createBrowser();
     const page = await browser.newPage();
     
-    await page.goto(RANKINGS_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForTimeout(3000);
+    await page.goto(RANKINGS_URL, { waitUntil: "networkidle", timeout: 20000 });
+    await page.waitForTimeout(2000);
     
     const rankings: RankingEntry[] = await page.evaluate(() => {
       const results: { modelId: string; modelName: string; weeklyTokens: string }[] = [];
@@ -118,13 +118,13 @@ export async function scrapeModelApps(modelId: string): Promise<ModelApps> {
     
     const appsUrl = `${MODEL_BASE_URL}/${modelId}/apps`;
     
-    const response = await page.goto(appsUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    const response = await page.goto(appsUrl, { waitUntil: "networkidle", timeout: 15000 });
     
     if (!response || response.status() >= 400) {
       return { modelId, apps: [] };
     }
     
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(1000);
     
     const apps = await page.evaluate(() => {
       const appNames: string[] = [];
