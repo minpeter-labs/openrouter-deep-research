@@ -1,4 +1,7 @@
-export type LicenseCategory = "Fully Open" | "Open with Restrictions" | "Unknown";
+export type LicenseCategory =
+  | "Fully Open"
+  | "Open with Restrictions"
+  | "Unknown";
 
 interface HFModelResponse {
   id: string;
@@ -14,17 +17,23 @@ async function rateLimit() {
   const now = Date.now();
   const timeSinceLastRequest = now - lastRequestTime;
   if (timeSinceLastRequest < 500) {
-    await new Promise(resolve => setTimeout(resolve, 500 - timeSinceLastRequest));
+    await new Promise((resolve) =>
+      setTimeout(resolve, 500 - timeSinceLastRequest)
+    );
   }
   lastRequestTime = Date.now();
 }
 
-export async function fetchModelLicense(huggingFaceId: string): Promise<LicenseCategory> {
+export async function fetchModelLicense(
+  huggingFaceId: string
+): Promise<LicenseCategory> {
   try {
     await rateLimit();
 
-    const response = await fetch(`https://huggingface.co/api/models/${huggingFaceId}`);
-    
+    const response = await fetch(
+      `https://huggingface.co/api/models/${huggingFaceId}`
+    );
+
     if (!response.ok) {
       return "Unknown";
     }
@@ -35,8 +44,8 @@ export async function fetchModelLicense(huggingFaceId: string): Promise<LicenseC
       return "Unknown";
     }
 
-    const licenseTag = data.tags.find(tag => tag.startsWith("license:"));
-    
+    const licenseTag = data.tags.find((tag) => tag.startsWith("license:"));
+
     if (!licenseTag) {
       return "Unknown";
     }
@@ -52,7 +61,7 @@ export async function fetchModelLicense(huggingFaceId: string): Promise<LicenseC
     }
 
     return "Unknown";
-  } catch (error) {
+  } catch (_error) {
     return "Unknown";
   }
 }

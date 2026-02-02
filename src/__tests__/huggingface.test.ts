@@ -1,4 +1,4 @@
-import { test, expect, describe } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { fetchModelLicense } from "../lib/huggingface";
 
 describe("HuggingFace API Client", () => {
@@ -36,11 +36,15 @@ describe("HuggingFace API Client", () => {
     test("should return 'Unknown' for custom/unrecognized license", async () => {
       // Some models have custom licenses that don't fit our categories
       const license = await fetchModelLicense("bigscience/bloom");
-      expect(["Fully Open", "Open with Restrictions", "Unknown"]).toContain(license);
+      expect(["Fully Open", "Open with Restrictions", "Unknown"]).toContain(
+        license
+      );
     });
 
     test("should handle API errors gracefully", async () => {
-      const license = await fetchModelLicense("invalid/model/path/that/does/not/exist");
+      const license = await fetchModelLicense(
+        "invalid/model/path/that/does/not/exist"
+      );
       expect(license).toBe("Unknown");
     });
   });

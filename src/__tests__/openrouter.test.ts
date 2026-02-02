@@ -1,11 +1,15 @@
-import { test, expect, describe } from "bun:test";
-import { fetchModels, filterOpenWeightModels, type Model } from "../lib/openrouter";
+import { describe, expect, test } from "bun:test";
+import {
+  fetchModels,
+  filterOpenWeightModels,
+  type Model,
+} from "../lib/openrouter";
 
 describe("OpenRouter API Client", () => {
   describe("fetchModels", () => {
     test("should fetch models from OpenRouter API", async () => {
       const models = await fetchModels();
-      
+
       expect(models).toBeDefined();
       expect(Array.isArray(models)).toBe(true);
       expect(models.length).toBeGreaterThan(0);
@@ -14,7 +18,11 @@ describe("OpenRouter API Client", () => {
     test("should return models with required fields", async () => {
       const models = await fetchModels();
       const firstModel = models[0];
-      
+
+      expect(firstModel).toBeDefined();
+      if (!firstModel) {
+        return;
+      }
       expect(firstModel).toHaveProperty("id");
       expect(firstModel).toHaveProperty("name");
       expect(firstModel).toHaveProperty("hugging_face_id");
@@ -94,10 +102,14 @@ describe("OpenRouter API Client", () => {
       ];
 
       const openWeightModels = filterOpenWeightModels(mockModels);
-      
+
       expect(openWeightModels.length).toBe(2);
-      expect(openWeightModels[0].id).toBe("open-model-1");
-      expect(openWeightModels[1].id).toBe("open-model-2");
+      const [firstModel, secondModel] = openWeightModels;
+      if (!(firstModel && secondModel)) {
+        throw new Error("Expected two open-weight models");
+      }
+      expect(firstModel.id).toBe("open-model-1");
+      expect(secondModel.id).toBe("open-model-2");
     });
 
     test("should handle empty array", () => {
@@ -137,15 +149,15 @@ describe("OpenRouter API Client", () => {
     test("should fetch and filter open-weight models from real API", async () => {
       const allModels = await fetchModels();
       const openWeightModels = filterOpenWeightModels(allModels);
-      
+
       expect(allModels.length).toBeGreaterThan(300);
       expect(openWeightModels.length).toBeGreaterThan(100);
-      
+
       // Verify all filtered models have hugging_face_id
-      openWeightModels.forEach(model => {
+      for (const model of openWeightModels) {
         expect(model.hugging_face_id).toBeTruthy();
         expect(model.hugging_face_id).not.toBe("");
-      });
+      }
     });
   });
 });
