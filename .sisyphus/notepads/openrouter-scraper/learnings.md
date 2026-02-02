@@ -105,3 +105,60 @@
 3. REFACTOR: Error handling already clean, no changes needed
 4. All tests pass in ~3.8s
 
+
+## Playwright Scraping Implementation (Task 4)
+
+### Playwright Browser Automation
+
+- **Browser installation**: Must run `bunx playwright install chromium` before first use
+- **Headless mode**: Use `chromium.launch({ headless: true })` for CI/automated environments
+- **Wait strategies**: 
+  - `domcontentloaded` is faster than `networkidle`
+  - Add manual `waitForTimeout(2000-3000)` to let JS render content
+  - Avoid `:has-text()` selectors inside `page.evaluate()` - they're Playwright-specific, not standard CSS
+
+### Selector Strategies for OpenRouter
+
+- **Rankings page** (`/rankings`):
+  - Model links follow pattern: `a[href^="/"]` with href `/provider/model-name`
+  - Token counts are in parent elements, format: "775B tokens"
+  - Need to exclude navigation links (docs, chat, models, etc.)
+  
+- **Model Apps page** (`/{provider}/{model}/apps`):
+  - App links use `a[href*="/apps?url="]`
+  - App names are in text nodes, not always the full textContent
+  - Direct navigation to `/apps` tab works: `/${modelId}/apps`
+
+### Rate Limiting
+
+- Implemented 2-second delay between requests using module-level `lastRequestTime` tracker
+- Pattern: Check elapsed time since last request, sleep if needed, update timestamp
+
+### Error Handling Patterns
+
+- Return empty arrays on errors instead of throwing
+- Check response status before parsing: `response.status() >= 400`
+- Wrap all browser operations in try-finally with `browser.close()`
+
+### TypeScript Configuration
+
+- Added `"DOM"` to `lib` in tsconfig.json for browser API types (document, Node, etc.)
+- `page.evaluate()` callback runs in browser context but TypeScript still type-checks
+
+### Test Optimization
+
+- Use caching for repeated API calls in tests to reduce network load
+- Set longer timeouts for integration tests (60-120 seconds)
+- Use `setDefaultTimeout()` from bun:test
+
+### TDD Workflow
+
+1. RED: Created test file with all expected behaviors
+2. GREEN: Implemented scraper with working selectors
+3. REFACTOR: Fixed TypeScript types, improved exclusion logic
+
+### Results
+
+- Rankings scraping: Extracts 10+ models with name, ID, and weekly tokens
+- Apps scraping: Extracts 5+ apps per popular model
+- All 13 tests passing
