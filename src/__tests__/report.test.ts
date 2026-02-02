@@ -1,12 +1,12 @@
-import { test, expect } from "bun:test";
-import { generateReport, type ReportData } from "../lib/report";
+import { expect, test } from "bun:test";
 import type { Model } from "../lib/openrouter";
-import type { RankingEntry } from "../lib/scraper";
+import { generateReport, type ReportData } from "../lib/report";
+import type { ModelActivity } from "../lib/scraper";
 
 test("generateReport should include header with metadata", () => {
   const mockData: ReportData = {
     models: [],
-    rankings: [],
+    activities: [],
     licenses: {},
     apps: {},
   };
@@ -26,9 +26,9 @@ test("generateReport should create Top 20 Popular Models table", () => {
       canonical_slug: "deepseek/deepseek-v3",
       hugging_face_id: "deepseek-ai/DeepSeek-V3",
       name: "DeepSeek V3",
-      created: 1234567890,
+      created: 1_234_567_890,
       description: "Test model",
-      context_length: 128000,
+      context_length: 128_000,
       architecture: {
         modality: "text",
         input_modalities: ["text"],
@@ -36,23 +36,26 @@ test("generateReport should create Top 20 Popular Models table", () => {
         tokenizer: "GPT",
       },
       pricing: {
-        prompt: "0.30",
-        completion: "1.20",
+        prompt: "0.0000003",
+        completion: "0.0000012",
       },
     },
   ];
 
-  const mockRankings: RankingEntry[] = [
+  const mockActivities: ModelActivity[] = [
     {
       modelId: "deepseek/deepseek-v3",
-      modelName: "DeepSeek V3",
-      weeklyTokens: "508B",
+      promptTokens: 16_200_000_000,
+      completionTokens: 567_000_000,
+      reasoningTokens: 75_400_000,
+      totalTokens: 16_842_400_000,
+      categories: ["Roleplay (#1)", "Academia (#4)"],
     },
   ];
 
   const mockData: ReportData = {
     models: mockModels,
-    rankings: mockRankings,
+    activities: mockActivities,
     licenses: {},
     apps: {},
   };
@@ -60,8 +63,12 @@ test("generateReport should create Top 20 Popular Models table", () => {
   const report = generateReport(mockData);
 
   expect(report).toContain("## Top 20 Popular Open-Weight Models");
-  expect(report).toContain("| Rank | Model | Provider | Weekly Tokens | Price (Input/Output) |");
-  expect(report).toContain("| 1 | DeepSeek V3 | deepseek | 508B | $0.30/$1.20 |");
+  expect(report).toContain(
+    "| Rank | Model | Provider | Total Tokens | Categories | Price (Input/Output) |"
+  );
+  expect(report).toContain(
+    "| 1 | DeepSeek V3 | deepseek | 16.8B | Roleplay (#1), Academia (#4) | $0.3/$1.2 |"
+  );
 });
 
 test("generateReport should handle dynamic pricing (-1)", () => {
@@ -71,7 +78,7 @@ test("generateReport should handle dynamic pricing (-1)", () => {
       canonical_slug: "test/model",
       hugging_face_id: "test/model",
       name: "Test Model",
-      created: 1234567890,
+      created: 1_234_567_890,
       description: "Test",
       context_length: 8000,
       architecture: {
@@ -87,17 +94,20 @@ test("generateReport should handle dynamic pricing (-1)", () => {
     },
   ];
 
-  const mockRankings: RankingEntry[] = [
+  const mockActivities: ModelActivity[] = [
     {
       modelId: "test/model",
-      modelName: "Test Model",
-      weeklyTokens: "100M",
+      promptTokens: 100_000_000,
+      completionTokens: 0,
+      reasoningTokens: 0,
+      totalTokens: 100_000_000,
+      categories: [],
     },
   ];
 
   const mockData: ReportData = {
     models: mockModels,
-    rankings: mockRankings,
+    activities: mockActivities,
     licenses: {},
     apps: {},
   };
@@ -114,7 +124,7 @@ test("generateReport should create Price Comparison table", () => {
       canonical_slug: "test/model",
       hugging_face_id: "test/model",
       name: "Test Model",
-      created: 1234567890,
+      created: 1_234_567_890,
       description: "Test",
       context_length: 8000,
       architecture: {
@@ -124,15 +134,15 @@ test("generateReport should create Price Comparison table", () => {
         tokenizer: "GPT",
       },
       pricing: {
-        prompt: "0.10",
-        completion: "0.20",
+        prompt: "0.0000001",
+        completion: "0.0000002",
       },
     },
   ];
 
   const mockData: ReportData = {
     models: mockModels,
-    rankings: [],
+    activities: [],
     licenses: {},
     apps: {},
   };
@@ -140,8 +150,10 @@ test("generateReport should create Price Comparison table", () => {
   const report = generateReport(mockData);
 
   expect(report).toContain("## Price Comparison");
-  expect(report).toContain("| Model | Input ($/1M) | Output ($/1M) | Context |");
-  expect(report).toContain("| Test Model | $0.10 | $0.20 | 8000 |");
+  expect(report).toContain(
+    "| Model | Input ($/1M) | Output ($/1M) | Context |"
+  );
+  expect(report).toContain("| Test Model | $0.1 | $0.2 | 8000 |");
 });
 
 test("generateReport should create License Classification section", () => {
@@ -151,7 +163,7 @@ test("generateReport should create License Classification section", () => {
       canonical_slug: "test/open",
       hugging_face_id: "test/open",
       name: "Open Model",
-      created: 1234567890,
+      created: 1_234_567_890,
       description: "Test",
       context_length: 8000,
       architecture: {
@@ -161,8 +173,8 @@ test("generateReport should create License Classification section", () => {
         tokenizer: "GPT",
       },
       pricing: {
-        prompt: "0.10",
-        completion: "0.20",
+        prompt: "0.0000001",
+        completion: "0.0000002",
       },
     },
     {
@@ -170,7 +182,7 @@ test("generateReport should create License Classification section", () => {
       canonical_slug: "test/restricted",
       hugging_face_id: "test/restricted",
       name: "Restricted Model",
-      created: 1234567890,
+      created: 1_234_567_890,
       description: "Test",
       context_length: 8000,
       architecture: {
@@ -180,15 +192,15 @@ test("generateReport should create License Classification section", () => {
         tokenizer: "GPT",
       },
       pricing: {
-        prompt: "0.10",
-        completion: "0.20",
+        prompt: "0.0000001",
+        completion: "0.0000002",
       },
     },
   ];
 
   const mockData: ReportData = {
     models: mockModels,
-    rankings: [],
+    activities: [],
     licenses: {
       "test/open": "Fully Open",
       "test/restricted": "Open with Restrictions",
@@ -212,7 +224,7 @@ test("generateReport should create App Usage table", () => {
       canonical_slug: "test/model",
       hugging_face_id: "test/model",
       name: "Test Model",
-      created: 1234567890,
+      created: 1_234_567_890,
       description: "Test",
       context_length: 8000,
       architecture: {
@@ -222,15 +234,15 @@ test("generateReport should create App Usage table", () => {
         tokenizer: "GPT",
       },
       pricing: {
-        prompt: "0.10",
-        completion: "0.20",
+        prompt: "0.0000001",
+        completion: "0.0000002",
       },
     },
   ];
 
   const mockData: ReportData = {
     models: mockModels,
-    rankings: [],
+    activities: [],
     licenses: {},
     apps: {
       "test/model": ["App1", "App2", "App3"],
@@ -247,7 +259,7 @@ test("generateReport should create App Usage table", () => {
 test("generateReport should handle empty data gracefully", () => {
   const mockData: ReportData = {
     models: [],
-    rankings: [],
+    activities: [],
     licenses: {},
     apps: {},
   };
@@ -263,13 +275,13 @@ test("generateReport should handle empty data gracefully", () => {
   expect(report).not.toContain("null");
 });
 
-test("generateReport should limit rankings to top 20", () => {
+test("generateReport should limit to top 20", () => {
   const mockModels: Model[] = Array.from({ length: 30 }, (_, i) => ({
     id: `test/model-${i}`,
     canonical_slug: `test/model-${i}`,
     hugging_face_id: `test/model-${i}`,
     name: `Model ${i}`,
-    created: 1234567890,
+    created: 1_234_567_890,
     description: "Test",
     context_length: 8000,
     architecture: {
@@ -279,20 +291,26 @@ test("generateReport should limit rankings to top 20", () => {
       tokenizer: "GPT",
     },
     pricing: {
-      prompt: "0.10",
-      completion: "0.20",
+      prompt: "0.0000001",
+      completion: "0.0000002",
     },
   }));
 
-  const mockRankings: RankingEntry[] = Array.from({ length: 30 }, (_, i) => ({
-    modelId: `test/model-${i}`,
-    modelName: `Model ${i}`,
-    weeklyTokens: `${100 - i}B`,
-  }));
+  const mockActivities: ModelActivity[] = Array.from(
+    { length: 30 },
+    (_, i) => ({
+      modelId: `test/model-${i}`,
+      promptTokens: (100 - i) * 1_000_000_000,
+      completionTokens: 0,
+      reasoningTokens: 0,
+      totalTokens: (100 - i) * 1_000_000_000,
+      categories: [],
+    })
+  );
 
   const mockData: ReportData = {
     models: mockModels,
-    rankings: mockRankings,
+    activities: mockActivities,
     licenses: {},
     apps: {},
   };
@@ -303,14 +321,14 @@ test("generateReport should limit rankings to top 20", () => {
   expect(report).not.toContain("| 21 |");
 });
 
-test("generateReport should handle models not in rankings", () => {
+test("generateReport should handle models not in activities", () => {
   const mockModels: Model[] = [
     {
       id: "test/model-1",
       canonical_slug: "test/model-1",
       hugging_face_id: "test/model-1",
       name: "Model 1",
-      created: 1234567890,
+      created: 1_234_567_890,
       description: "Test",
       context_length: 8000,
       architecture: {
@@ -320,8 +338,8 @@ test("generateReport should handle models not in rankings", () => {
         tokenizer: "GPT",
       },
       pricing: {
-        prompt: "0.10",
-        completion: "0.20",
+        prompt: "0.0000001",
+        completion: "0.0000002",
       },
     },
     {
@@ -329,7 +347,7 @@ test("generateReport should handle models not in rankings", () => {
       canonical_slug: "test/model-2",
       hugging_face_id: "test/model-2",
       name: "Model 2",
-      created: 1234567890,
+      created: 1_234_567_890,
       description: "Test",
       context_length: 8000,
       architecture: {
@@ -339,23 +357,26 @@ test("generateReport should handle models not in rankings", () => {
         tokenizer: "GPT",
       },
       pricing: {
-        prompt: "0.15",
-        completion: "0.25",
+        prompt: "0.00000015",
+        completion: "0.00000025",
       },
     },
   ];
 
-  const mockRankings: RankingEntry[] = [
+  const mockActivities: ModelActivity[] = [
     {
       modelId: "test/model-1",
-      modelName: "Model 1",
-      weeklyTokens: "100B",
+      promptTokens: 100_000_000_000,
+      completionTokens: 0,
+      reasoningTokens: 0,
+      totalTokens: 100_000_000_000,
+      categories: [],
     },
   ];
 
   const mockData: ReportData = {
     models: mockModels,
-    rankings: mockRankings,
+    activities: mockActivities,
     licenses: {},
     apps: {},
   };
