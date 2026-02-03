@@ -1,7 +1,16 @@
 import { expect, test } from "bun:test";
 import type { Model } from "../lib/openrouter";
-import { generateReport, type ReportData } from "../lib/report";
-import type { ModelActivity } from "../lib/scraper";
+import {
+  analyzeTrend,
+  calculateMovingAverage,
+  createSparkline,
+  generateReport,
+  type ReportData,
+} from "../lib/report";
+import type { DailyTokenUsage, ModelActivity } from "../lib/scraper";
+
+const SPARKLINE_REGEX = /^[▁▂▃▄▅▆▇█]+$/;
+const DIRECTION_REGEX = /^[↗→↘]$/;
 
 test("generateReport should include header", () => {
   const mockData: ReportData = {
@@ -474,4 +483,207 @@ test("generateReport should truncate apps to 3", () => {
   expect(report).toContain("App1, App2, App3");
   expect(report).not.toContain("App4");
   expect(report).not.toContain("App5");
+});
+
+test("createSparkline should generate sparkline for normal data", () => {
+  const values = [10, 20, 15, 30, 25, 35, 40];
+  const sparkline = createSparkline(values);
+
+  expect(sparkline).toBeDefined();
+  expect(sparkline.length).toBe(7);
+  expect(sparkline).toMatch(SPARKLINE_REGEX);
+});
+
+test("createSparkline should handle empty array", () => {
+  const sparkline = createSparkline([]);
+
+  expect(sparkline).toBe("");
+});
+
+test("createSparkline should handle single value", () => {
+  const sparkline = createSparkline([42]);
+
+  expect(sparkline).toBeDefined();
+  expect(sparkline.length).toBe(1);
+  expect(sparkline).toMatch(SPARKLINE_REGEX);
+});
+
+test("createSparkline should handle all same values", () => {
+  const values = [5, 5, 5, 5, 5];
+  const sparkline = createSparkline(values);
+
+  expect(sparkline).toBeDefined();
+  expect(sparkline.length).toBe(5);
+  expect(sparkline).toMatch(SPARKLINE_REGEX);
+});
+
+test("calculateMovingAverage should calculate correctly", () => {
+  const values = [1, 2, 3, 4, 5];
+  const ma = calculateMovingAverage(values, 3);
+
+  expect(ma.length).toBe(3);
+  expect(ma[0]).toBe(2);
+  expect(ma[1]).toBe(3);
+  expect(ma[2]).toBe(4);
+});
+
+test("calculateMovingAverage should return empty for insufficient data", () => {
+  const values = [1, 2, 3];
+  const ma = calculateMovingAverage(values, 5);
+
+  expect(ma.length).toBe(0);
+});
+
+test("analyzeTrend should analyze trend with sufficient data", () => {
+  const dailyUsage: DailyTokenUsage[] = Array.from({ length: 35 }, (_, i) => ({
+    date: `2026-01-${String(i + 1).padStart(2, "0")}`,
+    tokens: 1_000_000 + i * 50_000,
+  }));
+
+  const trend = analyzeTrend(dailyUsage);
+
+  expect(trend.sparkline).toBeDefined();
+  expect(trend.sparkline.length).toBeGreaterThan(0);
+  expect(trend.direction).toMatch(DIRECTION_REGEX);
+  expect(trend.changePercent).toBeDefined();
+  expect(trend.ma7).toBeGreaterThan(0);
+  expect(trend.ma30).toBeGreaterThan(0);
+});
+
+test("analyzeTrend should handle insufficient data", () => {
+  const dailyUsage: DailyTokenUsage[] = Array.from({ length: 5 }, (_, i) => ({
+    date: `2026-01-${String(i + 1).padStart(2, "0")}`,
+    tokens: 1_000_000,
+  }));
+
+  const trend = analyzeTrend(dailyUsage);
+
+  expect(trend.sparkline).toBeDefined();
+  expect(trend.direction).toBe("→");
+  expect(trend.ma7).toBe(0);
+  expect(trend.ma30).toBe(0);
+});
+
+test("analyzeTrend should handle empty data", () => {
+  const trend = analyzeTrend([]);
+
+  expect(trend.sparkline).toBe("");
+  expect(trend.direction).toBe("→");
+  expect(trend.changePercent).toBe(0);
+  expect(trend.ma7).toBe(0);
+  expect(trend.ma30).toBe(0);
+});
+
+test("generateReport should include trend columns with historicalData", () => {
+  const mockModels: Model[] = [
+    {
+      id: "deepseek/deepseek-v3",
+      canonical_slug: "deepseek/deepseek-v3",
+      hugging_face_id: "deepseek-ai/DeepSeek-V3",
+      name: "DeepSeek V3",
+      created: 1_234_567_890,
+      description: "Test model",
+      context_length: 128_000,
+      architecture: {
+        modality: "text",
+        input_modalities: ["text"],
+        output_modalities: ["text"],
+        tokenizer: "GPT",
+      },
+      pricing: {
+        prompt: "0.0000003",
+        completion: "0.0000012",
+      },
+    },
+  ];
+
+  const mockActivities: ModelActivity[] = [
+    {
+      modelId: "deepseek/deepseek-v3",
+      promptTokens: 16_200_000_000,
+      completionTokens: 567_000_000,
+      reasoningTokens: 75_400_000,
+      totalTokens: 16_842_400_000,
+      categories: ["Roleplay (#1)", "Academia (#4)"],
+    },
+  ];
+
+  const mockHistoricalData: Record<string, DailyTokenUsage[]> = {
+    "deepseek/deepseek-v3": Array.from({ length: 35 }, (_, i) => ({
+      date: `2026-01-${String(i + 1).padStart(2, "0")}`,
+      tokens: 1_000_000 + i * 50_000,
+    })),
+  };
+
+  const mockData: ReportData = {
+    models: mockModels,
+    activities: mockActivities,
+    licenses: { "deepseek/deepseek-v3": "Fully Open" },
+    apps: {},
+    historicalData: mockHistoricalData,
+  };
+
+  const report = generateReport(mockData);
+
+  expect(report).toContain(
+    "| # | Model | Provider | Total | 7D Trend | Momentum | License | Price |"
+  );
+  expect(report).toContain("7D Trend");
+  expect(report).toContain("Momentum");
+  expect(report).not.toContain("Prompt");
+  expect(report).not.toContain("Completion");
+});
+
+test("generateReport should maintain original format without historicalData", () => {
+  const mockModels: Model[] = [
+    {
+      id: "deepseek/deepseek-v3",
+      canonical_slug: "deepseek/deepseek-v3",
+      hugging_face_id: "deepseek-ai/DeepSeek-V3",
+      name: "DeepSeek V3",
+      created: 1_234_567_890,
+      description: "Test model",
+      context_length: 128_000,
+      architecture: {
+        modality: "text",
+        input_modalities: ["text"],
+        output_modalities: ["text"],
+        tokenizer: "GPT",
+      },
+      pricing: {
+        prompt: "0.0000003",
+        completion: "0.0000012",
+      },
+    },
+  ];
+
+  const mockActivities: ModelActivity[] = [
+    {
+      modelId: "deepseek/deepseek-v3",
+      promptTokens: 16_200_000_000,
+      completionTokens: 567_000_000,
+      reasoningTokens: 75_400_000,
+      totalTokens: 16_842_400_000,
+      categories: ["Roleplay (#1)", "Academia (#4)"],
+    },
+  ];
+
+  const mockData: ReportData = {
+    models: mockModels,
+    activities: mockActivities,
+    licenses: { "deepseek/deepseek-v3": "Fully Open" },
+    apps: { "deepseek/deepseek-v3": ["App1", "App2"] },
+  };
+
+  const report = generateReport(mockData);
+
+  expect(report).toContain(
+    "| # | Model | Provider | Total | Prompt | Completion | Reasoning | Categories | License | Price | Apps |"
+  );
+  expect(report).toContain("Prompt");
+  expect(report).toContain("Completion");
+  expect(report).toContain("Reasoning");
+  expect(report).toContain("Categories");
+  expect(report).not.toContain("7D Trend");
+  expect(report).not.toContain("Momentum");
 });

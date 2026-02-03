@@ -96,7 +96,7 @@ function getPriceDisplay(inputPrice: string, outputPrice: string): string {
   return `${inputPrice}/${outputPrice}`;
 }
 
-function createSparkline(values: number[], length = 7): string {
+export function createSparkline(values: number[], length = 7): string {
   if (values.length === 0) {
     return "";
   }
@@ -126,7 +126,10 @@ function createSparkline(values: number[], length = 7): string {
     .join("");
 }
 
-function calculateMovingAverage(values: number[], window: number): number[] {
+export function calculateMovingAverage(
+  values: number[],
+  window: number
+): number[] {
   if (values.length < window) {
     return [];
   }
@@ -154,7 +157,7 @@ function calculateMovingAverage(values: number[], window: number): number[] {
   return result;
 }
 
-function analyzeTrend(dailyUsage: DailyTokenUsage[]): TrendAnalysis {
+export function analyzeTrend(dailyUsage: DailyTokenUsage[]): TrendAnalysis {
   if (dailyUsage.length === 0) {
     return {
       sparkline: "",
