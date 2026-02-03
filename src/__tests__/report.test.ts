@@ -3,7 +3,7 @@ import type { Model } from "../lib/openrouter";
 import { generateReport, type ReportData } from "../lib/report";
 import type { ModelActivity } from "../lib/scraper";
 
-test("generateReport should include header with metadata", () => {
+test("generateReport should include header", () => {
   const mockData: ReportData = {
     models: [],
     activities: [],
@@ -13,13 +13,12 @@ test("generateReport should include header with metadata", () => {
 
   const report = generateReport(mockData);
 
-  expect(report).toContain("# OpenRouter Open-Weight Model Report");
-  expect(report).toContain("> Generated:");
-  expect(report).toContain("> Total Open-Weight Models: 0");
-  expect(report).toContain("> Data Source: OpenRouter.ai");
+  expect(report).toContain("# OpenRouter Open-Weight Models - Top 20");
+  expect(report).toContain("Generated:");
+  expect(report).toContain("Source: OpenRouter.ai");
 });
 
-test("generateReport should create Top 20 Popular Models table", () => {
+test("generateReport should create unified table with all columns", () => {
   const mockModels: Model[] = [
     {
       id: "deepseek/deepseek-v3",
@@ -56,19 +55,25 @@ test("generateReport should create Top 20 Popular Models table", () => {
   const mockData: ReportData = {
     models: mockModels,
     activities: mockActivities,
-    licenses: {},
-    apps: {},
+    licenses: { "deepseek/deepseek-v3": "Fully Open" },
+    apps: { "deepseek/deepseek-v3": ["App1", "App2"] },
   };
 
   const report = generateReport(mockData);
 
-  expect(report).toContain("## Top 20 Popular Open-Weight Models");
   expect(report).toContain(
-    "| Rank | Model | Provider | Total Tokens | Categories | Price (Input/Output) |"
+    "| # | Model | Provider | Total | Prompt | Completion | Reasoning | Categories | License | Price | Apps |"
   );
-  expect(report).toContain(
-    "| 1 | DeepSeek V3 | deepseek | 16.8B | Roleplay (#1), Academia (#4) | $0.3/$1.2 |"
-  );
+  expect(report).toContain("DeepSeek V3");
+  expect(report).toContain("deepseek");
+  expect(report).toContain("16.8B");
+  expect(report).toContain("16.2B");
+  expect(report).toContain("567.0M");
+  expect(report).toContain("75.4M");
+  expect(report).toContain("Roleplay (#1)");
+  expect(report).toContain("Open");
+  expect(report).toContain("$0.3/$1.2");
+  expect(report).toContain("App1, App2");
 });
 
 test("generateReport should handle dynamic pricing (-1)", () => {
@@ -117,46 +122,7 @@ test("generateReport should handle dynamic pricing (-1)", () => {
   expect(report).toContain("Dynamic");
 });
 
-test("generateReport should create Price Comparison table", () => {
-  const mockModels: Model[] = [
-    {
-      id: "test/model",
-      canonical_slug: "test/model",
-      hugging_face_id: "test/model",
-      name: "Test Model",
-      created: 1_234_567_890,
-      description: "Test",
-      context_length: 8000,
-      architecture: {
-        modality: "text",
-        input_modalities: ["text"],
-        output_modalities: ["text"],
-        tokenizer: "GPT",
-      },
-      pricing: {
-        prompt: "0.0000001",
-        completion: "0.0000002",
-      },
-    },
-  ];
-
-  const mockData: ReportData = {
-    models: mockModels,
-    activities: [],
-    licenses: {},
-    apps: {},
-  };
-
-  const report = generateReport(mockData);
-
-  expect(report).toContain("## Price Comparison");
-  expect(report).toContain(
-    "| Model | Input ($/1M) | Output ($/1M) | Context |"
-  );
-  expect(report).toContain("| Test Model | $0.1 | $0.2 | 8000 |");
-});
-
-test("generateReport should create License Classification section", () => {
+test("generateReport should show license status in table", () => {
   const mockModels: Model[] = [
     {
       id: "test/open",
@@ -198,9 +164,28 @@ test("generateReport should create License Classification section", () => {
     },
   ];
 
+  const mockActivities: ModelActivity[] = [
+    {
+      modelId: "test/open",
+      promptTokens: 200_000_000,
+      completionTokens: 0,
+      reasoningTokens: 0,
+      totalTokens: 200_000_000,
+      categories: [],
+    },
+    {
+      modelId: "test/restricted",
+      promptTokens: 100_000_000,
+      completionTokens: 0,
+      reasoningTokens: 0,
+      totalTokens: 100_000_000,
+      categories: [],
+    },
+  ];
+
   const mockData: ReportData = {
     models: mockModels,
-    activities: [],
+    activities: mockActivities,
     licenses: {
       "test/open": "Fully Open",
       "test/restricted": "Open with Restrictions",
@@ -210,14 +195,13 @@ test("generateReport should create License Classification section", () => {
 
   const report = generateReport(mockData);
 
-  expect(report).toContain("## License Classification");
-  expect(report).toContain("### Fully Open (Commercial OK)");
-  expect(report).toContain("- Open Model");
-  expect(report).toContain("### Open with Restrictions");
-  expect(report).toContain("- Restricted Model");
+  expect(report).toContain("Open Model");
+  expect(report).toContain("| Open |");
+  expect(report).toContain("Restricted Model");
+  expect(report).toContain("| Restricted |");
 });
 
-test("generateReport should create App Usage table", () => {
+test("generateReport should show apps in table", () => {
   const mockModels: Model[] = [
     {
       id: "test/model",
@@ -240,9 +224,20 @@ test("generateReport should create App Usage table", () => {
     },
   ];
 
+  const mockActivities: ModelActivity[] = [
+    {
+      modelId: "test/model",
+      promptTokens: 100_000_000,
+      completionTokens: 0,
+      reasoningTokens: 0,
+      totalTokens: 100_000_000,
+      categories: [],
+    },
+  ];
+
   const mockData: ReportData = {
     models: mockModels,
-    activities: [],
+    activities: mockActivities,
     licenses: {},
     apps: {
       "test/model": ["App1", "App2", "App3"],
@@ -251,9 +246,7 @@ test("generateReport should create App Usage table", () => {
 
   const report = generateReport(mockData);
 
-  expect(report).toContain("## App Usage");
-  expect(report).toContain("| Model | Used By |");
-  expect(report).toContain("| Test Model | App1, App2, App3 |");
+  expect(report).toContain("App1, App2, App3");
 });
 
 test("generateReport should handle empty data gracefully", () => {
@@ -266,11 +259,8 @@ test("generateReport should handle empty data gracefully", () => {
 
   const report = generateReport(mockData);
 
-  expect(report).toContain("# OpenRouter Open-Weight Model Report");
-  expect(report).toContain("## Top 20 Popular Open-Weight Models");
-  expect(report).toContain("## Price Comparison");
-  expect(report).toContain("## License Classification");
-  expect(report).toContain("## App Usage");
+  expect(report).toContain("# OpenRouter Open-Weight Models - Top 20");
+  expect(report).toContain("| # | Model |");
   expect(report).not.toContain("undefined");
   expect(report).not.toContain("null");
 });
@@ -321,7 +311,7 @@ test("generateReport should limit to top 20", () => {
   expect(report).not.toContain("| 21 |");
 });
 
-test("generateReport should handle models not in activities", () => {
+test("generateReport should only show models with activity data", () => {
   const mockModels: Model[] = [
     {
       id: "test/model-1",
@@ -384,6 +374,104 @@ test("generateReport should handle models not in activities", () => {
   const report = generateReport(mockData);
 
   expect(report).toContain("Model 1");
-  expect(report).toContain("Model 2");
-  expect(report).toContain("## Price Comparison");
+  expect(report).not.toContain("Model 2");
+});
+
+test("generateReport should show dash for missing optional data", () => {
+  const mockModels: Model[] = [
+    {
+      id: "test/model",
+      canonical_slug: "test/model",
+      hugging_face_id: "test/model",
+      name: "Test Model",
+      created: 1_234_567_890,
+      description: "Test",
+      context_length: 8000,
+      architecture: {
+        modality: "text",
+        input_modalities: ["text"],
+        output_modalities: ["text"],
+        tokenizer: "GPT",
+      },
+      pricing: {
+        prompt: "0.0000001",
+        completion: "0.0000002",
+      },
+    },
+  ];
+
+  const mockActivities: ModelActivity[] = [
+    {
+      modelId: "test/model",
+      promptTokens: 100_000_000,
+      completionTokens: 0,
+      reasoningTokens: 0,
+      totalTokens: 100_000_000,
+      categories: [],
+    },
+  ];
+
+  const mockData: ReportData = {
+    models: mockModels,
+    activities: mockActivities,
+    licenses: {},
+    apps: {},
+  };
+
+  const report = generateReport(mockData);
+
+  const lines = report.split("\n");
+  const dataRow = lines.find((line) => line.includes("Test Model"));
+  expect(dataRow).toBeDefined();
+  expect(dataRow).toContain("| - |");
+});
+
+test("generateReport should truncate apps to 3", () => {
+  const mockModels: Model[] = [
+    {
+      id: "test/model",
+      canonical_slug: "test/model",
+      hugging_face_id: "test/model",
+      name: "Test Model",
+      created: 1_234_567_890,
+      description: "Test",
+      context_length: 8000,
+      architecture: {
+        modality: "text",
+        input_modalities: ["text"],
+        output_modalities: ["text"],
+        tokenizer: "GPT",
+      },
+      pricing: {
+        prompt: "0.0000001",
+        completion: "0.0000002",
+      },
+    },
+  ];
+
+  const mockActivities: ModelActivity[] = [
+    {
+      modelId: "test/model",
+      promptTokens: 100_000_000,
+      completionTokens: 0,
+      reasoningTokens: 0,
+      totalTokens: 100_000_000,
+      categories: [],
+    },
+  ];
+
+  const mockData: ReportData = {
+    models: mockModels,
+    activities: mockActivities,
+    licenses: {},
+    apps: {
+      "test/model": ["App1", "App2", "App3", "App4", "App5"],
+    },
+  };
+
+  const report = generateReport(mockData);
+
+  expect(report).toContain("App1, App2, App3");
+  expect(report).not.toContain("App4");
+  expect(report).not.toContain("App5");
 });

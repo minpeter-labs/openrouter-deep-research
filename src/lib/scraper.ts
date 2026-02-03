@@ -37,17 +37,38 @@ async function rateLimitDelay(): Promise<void> {
   lastRequestTime = Date.now();
 }
 
-function createBrowser(): Promise<Browser> {
-  return chromium.launch({ headless: true });
+let sharedBrowser: Browser | null = null;
+let pendingBrowserLaunch: Promise<Browser> | null = null;
+
+async function getBrowser(): Promise<Browser> {
+  if (sharedBrowser) {
+    return sharedBrowser;
+  }
+
+  if (pendingBrowserLaunch) {
+    return pendingBrowserLaunch;
+  }
+
+  pendingBrowserLaunch = chromium.launch({ headless: true });
+  sharedBrowser = await pendingBrowserLaunch;
+  pendingBrowserLaunch = null;
+
+  return sharedBrowser;
+}
+
+export async function closeBrowser(): Promise<void> {
+  if (sharedBrowser) {
+    await sharedBrowser.close();
+    sharedBrowser = null;
+  }
 }
 
 export async function scrapeRankings(): Promise<RankingEntry[]> {
-  let browser: Browser | null = null;
+  const browser = await getBrowser();
+  const page = await browser.newPage();
 
   try {
     await rateLimitDelay();
-    browser = await createBrowser();
-    const page = await browser.newPage();
 
     await page.goto(RANKINGS_URL, {
       waitUntil: "networkidle",
@@ -196,9 +217,7 @@ export async function scrapeRankings(): Promise<RankingEntry[]> {
     console.error("Error scraping rankings:", error);
     return [];
   } finally {
-    if (browser) {
-      await browser.close();
-    }
+    await page.close();
   }
 }
 
@@ -238,13 +257,11 @@ function parseTokenCount(text: string): number {
 export async function scrapeModelActivity(
   modelId: string
 ): Promise<ModelActivity> {
-  let browser: Browser | null = null;
+  const browser = await getBrowser();
+  const page = await browser.newPage();
 
   try {
     await rateLimitDelay();
-    browser = await createBrowser();
-    const page = await browser.newPage();
-
     const activityUrl = `${MODEL_BASE_URL}/${modelId}/activity`;
 
     const response = await page.goto(activityUrl, {
@@ -343,9 +360,7 @@ export async function scrapeModelActivity(
       categories: [],
     };
   } finally {
-    if (browser) {
-      await browser.close();
-    }
+    await page.close();
   }
 }
 
@@ -363,13 +378,11 @@ export interface ModelHistoricalData {
 export async function scrapeModelHistoricalData(
   modelId: string
 ): Promise<ModelHistoricalData> {
-  let browser: Browser | null = null;
+  const browser = await getBrowser();
+  const page = await browser.newPage();
 
   try {
     await rateLimitDelay();
-    browser = await createBrowser();
-    const page = await browser.newPage();
-
     const activityUrl = `${MODEL_BASE_URL}/${modelId}/activity`;
 
     const response = await page.goto(activityUrl, {
@@ -516,20 +529,16 @@ export async function scrapeModelHistoricalData(
     console.error(`Error scraping historical data for ${modelId}:`, error);
     return { modelId, dailyUsage: [], yAxisMax: 0 };
   } finally {
-    if (browser) {
-      await browser.close();
-    }
+    await page.close();
   }
 }
 
 export async function scrapeModelApps(modelId: string): Promise<ModelApps> {
-  let browser: Browser | null = null;
+  const browser = await getBrowser();
+  const page = await browser.newPage();
 
   try {
     await rateLimitDelay();
-    browser = await createBrowser();
-    const page = await browser.newPage();
-
     const appsUrl = `${MODEL_BASE_URL}/${modelId}/apps`;
 
     const response = await page.goto(appsUrl, {
@@ -601,8 +610,6 @@ export async function scrapeModelApps(modelId: string): Promise<ModelApps> {
     console.error(`Error scraping apps for ${modelId}:`, error);
     return { modelId, apps: [] };
   } finally {
-    if (browser) {
-      await browser.close();
-    }
+    await page.close();
   }
 }

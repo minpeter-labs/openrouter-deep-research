@@ -6,6 +6,7 @@ import {
 } from "./lib/openrouter";
 import { generateReport } from "./lib/report";
 import {
+  closeBrowser,
   type ModelActivity,
   scrapeModelActivity,
   scrapeModelApps,
@@ -189,6 +190,8 @@ async function main() {
       error instanceof Error ? error.message : String(error)
     );
     process.exit(1);
+  } finally {
+    await closeBrowser();
   }
 }
 
