@@ -26,6 +26,27 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
 const DATE_PATTERN_SLASH = /(\d{1,2})\/(\d{1,2})\/(\d{4})/;
 const DATE_PATTERN_DASH = /(\d{4})-(\d{1,2})-(\d{1,2})/;
 const DATE_PATTERN_TEXT = /([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})/;
+const DATE_PATTERN_TEXT_NO_YEAR = /([A-Za-z]+)\s+(\d{1,2})/;
+
+function parseMonthIndex(monthText: string): number | null {
+  const month = monthText.toLowerCase();
+  const months = [
+    "jan",
+    "feb",
+    "mar",
+    "apr",
+    "may",
+    "jun",
+    "jul",
+    "aug",
+    "sep",
+    "oct",
+    "nov",
+    "dec",
+  ];
+  const index = months.findIndex((m) => month.startsWith(m));
+  return index >= 0 ? index : null;
+}
 
 function parseDate(dateStr: string): Date | null {
   let match = dateStr.match(DATE_PATTERN_SLASH);
@@ -49,6 +70,22 @@ function parseDate(dateStr: string): Date | null {
   match = dateStr.match(DATE_PATTERN_TEXT);
   if (match) {
     return new Date(dateStr);
+  }
+
+  match = dateStr.match(DATE_PATTERN_TEXT_NO_YEAR);
+  if (match?.[1] && match[2]) {
+    const monthIndex = parseMonthIndex(match[1]);
+    if (monthIndex === null) {
+      return null;
+    }
+
+    const day = Number.parseInt(match[2], 10);
+    const now = new Date();
+    let year = now.getFullYear();
+    if (monthIndex > now.getMonth()) {
+      year -= 1;
+    }
+    return new Date(year, monthIndex, day);
   }
 
   return null;

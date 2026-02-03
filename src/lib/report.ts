@@ -177,10 +177,22 @@ export function analyzeTrend(dailyUsage: DailyTokenUsage[]): TrendAnalysis {
   const ma7Latest = ma7.length > 0 ? (ma7.at(-1) ?? 0) : 0;
   const ma30Latest = ma30.length > 0 ? (ma30.at(-1) ?? 0) : 0;
 
-  const firstValue = values.at(0) ?? 0;
-  const lastValue = values.at(-1) ?? 0;
-  const changePercent =
-    firstValue > 0 ? ((lastValue - firstValue) / firstValue) * 100 : 0;
+  let changePercent = 0;
+  if (values.length >= 14) {
+    const recent7Avg =
+      values.slice(-7).reduce((sum, value) => sum + value, 0) / 7;
+    const prev7Avg =
+      values.slice(-14, -7).reduce((sum, value) => sum + value, 0) / 7;
+    if (prev7Avg > 0) {
+      changePercent = ((recent7Avg - prev7Avg) / prev7Avg) * 100;
+    }
+  } else {
+    const firstValue = values.at(0) ?? 0;
+    const lastValue = values.at(-1) ?? 0;
+    if (firstValue > 0) {
+      changePercent = ((lastValue - firstValue) / firstValue) * 100;
+    }
+  }
 
   let direction = "→";
   if (changePercent > 5) {
@@ -206,7 +218,19 @@ function getTrendDisplay(trend: TrendAnalysis): string {
 
 function getMomentumIndicator(trend: TrendAnalysis): string {
   if (trend.ma30 === 0) {
-    return "→";
+    if (trend.changePercent > 50) {
+      return "🔥";
+    }
+    if (trend.changePercent > 10) {
+      return "📈";
+    }
+    if (trend.changePercent >= -10) {
+      return "→";
+    }
+    if (trend.changePercent > -50) {
+      return "📉";
+    }
+    return "⚠️";
   }
 
   const ratio = trend.ma7 / trend.ma30;

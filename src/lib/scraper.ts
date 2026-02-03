@@ -474,16 +474,29 @@ export async function scrapeModelHistoricalData(
             : 320;
         }
 
+        function collectXAxisLabels(): string[] {
+          const xAxisTicks = document.querySelectorAll(
+            ".recharts-xAxis .recharts-cartesian-axis-tick-value"
+          );
+          const xLabels: string[] = [];
+          for (const tick of Array.from(xAxisTicks)) {
+            const text = tick.textContent?.trim() || "";
+            xLabels.push(text);
+          }
+          return xLabels;
+        }
+
         const yLabels = collectYAxisLabels();
         const yAxisMax = computeYAxisMax(yLabels);
         const barHeights = collectBarHeights();
         const svgHeight = getSvgHeight();
+        const xLabels = collectXAxisLabels();
 
         const chartAreaTop = 10;
         const chartAreaBottom = svgHeight - 30;
         const chartAreaHeight = chartAreaBottom - chartAreaTop;
 
-        return { yAxisMax, barHeights, chartAreaHeight, svgHeight };
+        return { yAxisMax, barHeights, chartAreaHeight, svgHeight, xLabels };
       },
       {
         yLabelPatternSource: Y_LABEL_PATTERN_SOURCE,
@@ -494,30 +507,26 @@ export async function scrapeModelHistoricalData(
     const bars = await page.$$(".recharts-bar-rectangle path");
     const dailyUsage: DailyTokenUsage[] = [];
 
-    for (let i = 0; i < bars.length; i++) {
-      const bar = bars[i];
-      if (!bar) {
+    const xLabels = chartData.xLabels ?? [];
+    const limit = Math.min(
+      bars.length,
+      xLabels.length,
+      chartData.barHeights.length
+    );
+    for (let i = 0; i < limit; i++) {
+      const label = xLabels[i]?.trim();
+      const barHeight = chartData.barHeights[i];
+      if (!(label && barHeight)) {
         continue;
       }
 
-      await bar.hover();
-      await page.waitForTimeout(80);
+      const tokens =
+        (barHeight.height / chartData.chartAreaHeight) * chartData.yAxisMax;
 
-      const tooltipText = await page.evaluate(() => {
-        const tooltip = document.querySelector(".recharts-tooltip-wrapper");
-        return tooltip?.textContent?.trim() || "";
+      dailyUsage.push({
+        date: label,
+        tokens: Math.round(tokens),
       });
-
-      const barHeight = chartData.barHeights[i];
-      if (tooltipText && barHeight) {
-        const tokens =
-          (barHeight.height / chartData.chartAreaHeight) * chartData.yAxisMax;
-
-        dailyUsage.push({
-          date: tooltipText,
-          tokens: Math.round(tokens),
-        });
-      }
     }
 
     return {
