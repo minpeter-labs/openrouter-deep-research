@@ -1,13 +1,23 @@
 import type { Model } from "./openrouter";
-import type { ModelActivity } from "./scraper";
+import type { DailyTokenUsage, ModelActivity } from "./scraper";
 
 const TRAILING_ZERO_REGEX = /\.?0+$/;
+const SPARKLINE_BARS = "▁▂▃▄▅▆▇█";
+
+export interface TrendAnalysis {
+  sparkline: string;
+  direction: string;
+  changePercent: number;
+  ma7: number;
+  ma30: number;
+}
 
 export interface ReportData {
   models: Model[];
   activities: ModelActivity[];
   licenses: Record<string, string>;
   apps: Record<string, string[]>;
+  historicalData?: Record<string, DailyTokenUsage[]>;
 }
 
 function formatPrice(price: string): string {
@@ -86,8 +96,189 @@ function getPriceDisplay(inputPrice: string, outputPrice: string): string {
   return `${inputPrice}/${outputPrice}`;
 }
 
+function createSparkline(values: number[], length = 7): string {
+  if (values.length === 0) {
+    return "";
+  }
+
+  const slice = values.slice(-length);
+  if (slice.length === 0) {
+    return "";
+  }
+
+  const min = Math.min(...slice);
+  const max = Math.max(...slice);
+  const range = max - min;
+
+  return slice
+    .map((value) => {
+      if (range === 0) {
+        return SPARKLINE_BARS.at(4) ?? "▅";
+      }
+      const normalized = (value - min) / range;
+      const index = Math.floor(normalized * (SPARKLINE_BARS.length - 1));
+      const clampedIndex = Math.max(
+        0,
+        Math.min(index, SPARKLINE_BARS.length - 1)
+      );
+      return SPARKLINE_BARS.at(clampedIndex) ?? "▅";
+    })
+    .join("");
+}
+
+function calculateMovingAverage(values: number[], window: number): number[] {
+  if (values.length < window) {
+    return [];
+  }
+
+  const result: number[] = [];
+  let sum = 0;
+
+  for (let i = 0; i < window; i++) {
+    const val = values.at(i);
+    if (val !== undefined) {
+      sum += val;
+    }
+  }
+  result.push(sum / window);
+
+  for (let i = window; i < values.length; i++) {
+    const oldVal = values.at(i - window);
+    const newVal = values.at(i);
+    if (oldVal !== undefined && newVal !== undefined) {
+      sum = sum - oldVal + newVal;
+      result.push(sum / window);
+    }
+  }
+
+  return result;
+}
+
+function analyzeTrend(dailyUsage: DailyTokenUsage[]): TrendAnalysis {
+  if (dailyUsage.length === 0) {
+    return {
+      sparkline: "",
+      direction: "→",
+      changePercent: 0,
+      ma7: 0,
+      ma30: 0,
+    };
+  }
+
+  const values = dailyUsage.map((d) => d.tokens);
+  const sparkline = createSparkline(values);
+
+  const ma7 = calculateMovingAverage(values, 7);
+  const ma30 = calculateMovingAverage(values, 30);
+
+  const ma7Latest = ma7.length > 0 ? (ma7.at(-1) ?? 0) : 0;
+  const ma30Latest = ma30.length > 0 ? (ma30.at(-1) ?? 0) : 0;
+
+  const firstValue = values.at(0) ?? 0;
+  const lastValue = values.at(-1) ?? 0;
+  const changePercent =
+    firstValue > 0 ? ((lastValue - firstValue) / firstValue) * 100 : 0;
+
+  let direction = "→";
+  if (changePercent > 5) {
+    direction = "↗";
+  }
+  if (changePercent < -5) {
+    direction = "↘";
+  }
+
+  return {
+    sparkline,
+    direction,
+    changePercent: Math.round(changePercent),
+    ma7: ma7Latest,
+    ma30: ma30Latest,
+  };
+}
+
+function getTrendDisplay(trend: TrendAnalysis): string {
+  const sign = trend.changePercent > 0 ? "+" : "";
+  return `${trend.sparkline} ${trend.direction}${sign}${trend.changePercent}%`;
+}
+
+function getMomentumIndicator(trend: TrendAnalysis): string {
+  if (trend.ma30 === 0) {
+    return "→";
+  }
+
+  const ratio = trend.ma7 / trend.ma30;
+
+  if (ratio > 1.5) {
+    return "🔥";
+  }
+  if (ratio > 1.1) {
+    return "📈";
+  }
+  if (ratio >= 0.9 && ratio <= 1.1) {
+    return "→";
+  }
+  if (ratio > 0.5) {
+    return "📉";
+  }
+  return "⚠️";
+}
+
+function buildTrendTableRow(
+  rank: number,
+  model: Model,
+  activity: ModelActivity,
+  licenses: Record<string, string>,
+  historicalData: Record<string, DailyTokenUsage[]> | undefined
+): string {
+  const provider = extractProvider(activity.modelId);
+  const total = formatTokenCount(activity.totalTokens);
+  const license = getLicenseShort(licenses[model.id] || "Unknown");
+  const inputPrice = formatPrice(model.pricing.prompt);
+  const outputPrice = formatPrice(model.pricing.completion);
+  const price = getPriceDisplay(inputPrice, outputPrice);
+
+  const dailyUsage = historicalData?.[activity.modelId];
+  let trendDisplay = "-";
+  let momentumDisplay = "-";
+
+  if (dailyUsage && dailyUsage.length > 0) {
+    const trend = analyzeTrend(dailyUsage);
+    trendDisplay = getTrendDisplay(trend);
+    momentumDisplay = getMomentumIndicator(trend);
+  }
+
+  return `| ${rank} | ${model.name} | ${provider} | ${total} | ${trendDisplay} | ${momentumDisplay} | ${license} | ${price} |`;
+}
+
+function buildOriginalTableRow(
+  rank: number,
+  model: Model,
+  activity: ModelActivity,
+  licenses: Record<string, string>,
+  apps: Record<string, string[]>
+): string {
+  const provider = extractProvider(activity.modelId);
+  const total = formatTokenCount(activity.totalTokens);
+  const prompt = formatOptionalToken(activity.promptTokens);
+  const completion = formatOptionalToken(activity.completionTokens);
+  const reasoning = formatOptionalToken(activity.reasoningTokens);
+  const categories =
+    activity.categories.length > 0
+      ? activity.categories.slice(0, 2).join(", ")
+      : "-";
+  const license = getLicenseShort(licenses[model.id] || "Unknown");
+  const inputPrice = formatPrice(model.pricing.prompt);
+  const outputPrice = formatPrice(model.pricing.completion);
+  const price = getPriceDisplay(inputPrice, outputPrice);
+  const modelApps = apps[model.id];
+  const appsDisplay =
+    modelApps && modelApps.length > 0 ? modelApps.slice(0, 3).join(", ") : "-";
+
+  return `| ${rank} | ${model.name} | ${provider} | ${total} | ${prompt} | ${completion} | ${reasoning} | ${categories} | ${license} | ${price} | ${appsDisplay} |`;
+}
+
 export function generateReport(data: ReportData): string {
-  const { models, activities, licenses, apps } = data;
+  const { models, activities, licenses, apps, historicalData } = data;
 
   const lines: string[] = [];
 
@@ -103,12 +294,24 @@ export function generateReport(data: ReportData): string {
     .sort((a, b) => b.totalTokens - a.totalTokens)
     .slice(0, 20);
 
-  lines.push(
-    "| # | Model | Provider | Total | Prompt | Completion | Reasoning | Categories | License | Price | Apps |"
-  );
-  lines.push(
-    "|---|-------|----------|-------|--------|------------|-----------|------------|---------|-------|------|"
-  );
+  const hasHistoricalData =
+    historicalData && Object.keys(historicalData).length > 0;
+
+  if (hasHistoricalData) {
+    lines.push(
+      "| # | Model | Provider | Total | 7D Trend | Momentum | License | Price |"
+    );
+    lines.push(
+      "|---|-------|----------|-------|----------|----------|---------|-------|"
+    );
+  } else {
+    lines.push(
+      "| # | Model | Provider | Total | Prompt | Completion | Reasoning | Categories | License | Price | Apps |"
+    );
+    lines.push(
+      "|---|-------|----------|-------|--------|------------|-----------|------------|---------|-------|------|"
+    );
+  }
 
   for (let i = 0; i < top20.length; i++) {
     const activity = top20[i];
@@ -122,28 +325,14 @@ export function generateReport(data: ReportData): string {
     }
 
     const rank = i + 1;
-    const provider = extractProvider(activity.modelId);
-    const total = formatTokenCount(activity.totalTokens);
-    const prompt = formatOptionalToken(activity.promptTokens);
-    const completion = formatOptionalToken(activity.completionTokens);
-    const reasoning = formatOptionalToken(activity.reasoningTokens);
-    const categories =
-      activity.categories.length > 0
-        ? activity.categories.slice(0, 2).join(", ")
-        : "-";
-    const license = getLicenseShort(licenses[model.id] || "Unknown");
-    const inputPrice = formatPrice(model.pricing.prompt);
-    const outputPrice = formatPrice(model.pricing.completion);
-    const price = getPriceDisplay(inputPrice, outputPrice);
-    const modelApps = apps[model.id];
-    const appsDisplay =
-      modelApps && modelApps.length > 0
-        ? modelApps.slice(0, 3).join(", ")
-        : "-";
 
-    lines.push(
-      `| ${rank} | ${model.name} | ${provider} | ${total} | ${prompt} | ${completion} | ${reasoning} | ${categories} | ${license} | ${price} | ${appsDisplay} |`
-    );
+    if (hasHistoricalData) {
+      lines.push(
+        buildTrendTableRow(rank, model, activity, licenses, historicalData)
+      );
+    } else {
+      lines.push(buildOriginalTableRow(rank, model, activity, licenses, apps));
+    }
   }
 
   lines.push("");
