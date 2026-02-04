@@ -20,10 +20,11 @@ const TOKEN_COUNT_REGEX = /([\d.]+)\s*([KMBT]?)/i;
 const ACTIVITY_TOKEN_PATTERN_SOURCE = "([\\d.]+[KMBT]?)$";
 const ACTIVITY_TOKEN_PATTERN_FLAGS = "i";
 const CATEGORY_PATTERN_SOURCE = "^([A-Za-z\\s]+)\\s*\\(#\\d+\\)$";
-const Y_LABEL_PATTERN_SOURCE = "([\\d.]+)\\s*([KMBT]?)";
-const Y_LABEL_PATTERN_FLAGS = "i";
 const APP_SANITIZE_PATTERN_SOURCE = "[^\\w\\s'-]";
 const APP_SANITIZE_PATTERN_FLAGS = "g";
+const HOVER_WAIT_MS = 200;
+const HOVER_RETRY_COUNT = 3;
+const TOOLTIP_TOKEN_VALUE_REGEX = /([\d.]+)\s*(T|B|M|K)?/i;
 
 let lastRequestTime = 0;
 
@@ -387,152 +388,133 @@ export async function scrapeModelHistoricalData(
 
     const response = await page.goto(activityUrl, {
       waitUntil: "networkidle",
-      timeout: 20_000,
+      timeout: 60_000,
     });
 
     if (!response || response.status() >= 400) {
       return { modelId, dailyUsage: [], yAxisMax: 0 };
     }
 
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(2000);
 
-    const chartData = await page.evaluate(
-      ({ yLabelPatternSource, yLabelPatternFlags }) => {
-        const labelPattern = new RegExp(
-          yLabelPatternSource,
-          yLabelPatternFlags
-        );
-
-        function collectYAxisLabels(): string[] {
-          const yAxisTicks = document.querySelectorAll(
-            ".recharts-yAxis .recharts-cartesian-axis-tick-value"
-          );
-          const yLabels: string[] = [];
-          for (const tick of Array.from(yAxisTicks)) {
-            const text = tick.textContent?.trim() || "";
-            if (text) {
-              yLabels.push(text);
-            }
-          }
-          return yLabels;
-        }
-
-        function parseLabelValue(label: string): number | null {
-          const match = label.match(labelPattern);
-          if (!match) {
-            return null;
-          }
-          const numText = match[1];
-          if (!numText) {
-            return null;
-          }
-          const num = Number.parseFloat(numText);
-          const suffix = (match[2] || "").toUpperCase();
-          const multipliers: Record<string, number> = {
-            "": 1,
-            K: 1000,
-            M: 1_000_000,
-            B: 1_000_000_000,
-            T: 1_000_000_000_000,
-          };
-          return num * (multipliers[suffix] || 1);
-        }
-
-        function computeYAxisMax(labels: string[]): number {
-          let maxValue = 0;
-          for (const label of labels) {
-            const value = parseLabelValue(label);
-            if (value !== null && value > maxValue) {
-              maxValue = value;
-            }
-          }
-          return maxValue;
-        }
-
-        function collectBarHeights(): { y: number; height: number }[] {
-          const bars = document.querySelectorAll(
-            ".recharts-bar-rectangle path"
-          );
-          const barHeights: { y: number; height: number }[] = [];
-          for (const bar of Array.from(bars)) {
-            const yAttr = bar.getAttribute("y");
-            const heightAttr = bar.getAttribute("height");
-            if (yAttr && heightAttr) {
-              barHeights.push({
-                y: Number.parseFloat(yAttr),
-                height: Number.parseFloat(heightAttr),
-              });
-            }
-          }
-          return barHeights;
-        }
-
-        function getSvgHeight(): number {
-          const svg = document.querySelector(".recharts-surface");
-          return svg
-            ? Number.parseFloat(svg.getAttribute("height") || "320")
-            : 320;
-        }
-
-        function collectXAxisLabels(): string[] {
-          const xAxisTicks = document.querySelectorAll(
-            ".recharts-xAxis .recharts-cartesian-axis-tick-value"
-          );
-          const xLabels: string[] = [];
-          for (const tick of Array.from(xAxisTicks)) {
-            const text = tick.textContent?.trim() || "";
-            xLabels.push(text);
-          }
-          return xLabels;
-        }
-
-        const yLabels = collectYAxisLabels();
-        const yAxisMax = computeYAxisMax(yLabels);
-        const barHeights = collectBarHeights();
-        const svgHeight = getSvgHeight();
-        const xLabels = collectXAxisLabels();
-
-        const chartAreaTop = 10;
-        const chartAreaBottom = svgHeight - 30;
-        const chartAreaHeight = chartAreaBottom - chartAreaTop;
-
-        return { yAxisMax, barHeights, chartAreaHeight, svgHeight, xLabels };
-      },
-      {
-        yLabelPatternSource: Y_LABEL_PATTERN_SOURCE,
-        yLabelPatternFlags: Y_LABEL_PATTERN_FLAGS,
+    await page.evaluate(() => {
+      const nav = document.querySelector("nav#main-nav");
+      if (nav instanceof HTMLElement) {
+        nav.style.pointerEvents = "none";
+        nav.style.opacity = "0";
       }
-    );
+    });
 
     const bars = await page.$$(".recharts-bar-rectangle path");
     const dailyUsage: DailyTokenUsage[] = [];
+    let yAxisMax = 0;
 
-    const xLabels = chartData.xLabels ?? [];
-    const limit = Math.min(
-      bars.length,
-      xLabels.length,
-      chartData.barHeights.length
-    );
-    for (let i = 0; i < limit; i++) {
-      const label = xLabels[i]?.trim();
-      const barHeight = chartData.barHeights[i];
-      if (!(label && barHeight)) {
+    function parseTokenValue(
+      valueText: string,
+      multipliers: Record<string, number>
+    ): number | null {
+      const match = valueText.match(TOOLTIP_TOKEN_VALUE_REGEX);
+      if (!match) {
+        return null;
+      }
+      const num = Number.parseFloat(match[1] || "0");
+      const suffix = (match[2] || "").toUpperCase();
+      return num * (multipliers[suffix] || 1);
+    }
+
+    function parseTooltipTokens(texts: string[]): number {
+      const multipliers: Record<string, number> = {
+        "": 1,
+        K: 1000,
+        M: 1_000_000,
+        B: 1_000_000_000,
+        T: 1_000_000_000_000,
+      };
+      const labels = ["Prompt", "Completion", "Reasoning"] as const;
+      const tokensByLabel: Record<(typeof labels)[number], number> = {
+        Prompt: 0,
+        Completion: 0,
+        Reasoning: 0,
+      };
+
+      for (const text of texts) {
+        const label = labels.find((candidate) => text.startsWith(candidate));
+        if (!label) {
+          continue;
+        }
+        const valueText = text.slice(label.length).trim();
+        const tokens = parseTokenValue(valueText, multipliers);
+        if (tokens === null) {
+          continue;
+        }
+        tokensByLabel[label] = tokens;
+      }
+
+      return (
+        tokensByLabel.Prompt +
+        tokensByLabel.Completion +
+        tokensByLabel.Reasoning
+      );
+    }
+
+    const recentBars = bars.slice(-30);
+    for (const bar of recentBars) {
+      if (!bar) {
         continue;
       }
 
-      const tokens =
-        (barHeight.height / chartData.chartAreaHeight) * chartData.yAxisMax;
+      let data: { dateText: string; totalTokens: number } | null = null;
+      for (let attempt = 0; attempt < HOVER_RETRY_COUNT; attempt++) {
+        try {
+          await bar.hover({ timeout: 3000 });
+          await page.waitForTimeout(HOVER_WAIT_MS);
+
+          const result = await page.evaluate(() => {
+            const tooltip = document.querySelector(".recharts-tooltip-wrapper");
+            const dateText = tooltip?.textContent?.trim() || "";
+            const texts: string[] = [];
+
+            for (const div of Array.from(document.querySelectorAll("div"))) {
+              const text = div.textContent?.trim() || "";
+              if (
+                text.startsWith("Prompt") ||
+                text.startsWith("Completion") ||
+                text.startsWith("Reasoning")
+              ) {
+                texts.push(text);
+              }
+            }
+
+            return { dateText, texts };
+          });
+
+          const totalTokens = parseTooltipTokens(result.texts);
+          if (result.dateText && totalTokens > 0) {
+            data = { dateText: result.dateText, totalTokens };
+            break;
+          }
+        } catch {
+          await page.waitForTimeout(200 * (attempt + 1));
+        }
+      }
+
+      if (!data) {
+        continue;
+      }
 
       dailyUsage.push({
-        date: label,
-        tokens: Math.round(tokens),
+        date: data.dateText,
+        tokens: Math.round(data.totalTokens),
       });
+      if (data.totalTokens > yAxisMax) {
+        yAxisMax = data.totalTokens;
+      }
     }
 
     return {
       modelId,
       dailyUsage,
-      yAxisMax: chartData.yAxisMax,
+      yAxisMax,
     };
   } catch (error) {
     console.error(`Error scraping historical data for ${modelId}:`, error);

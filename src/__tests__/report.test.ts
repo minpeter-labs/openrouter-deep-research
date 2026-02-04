@@ -560,8 +560,8 @@ test("analyzeTrend should handle insufficient data", () => {
 
   expect(trend.sparkline).toBeDefined();
   expect(trend.direction).toBe("→");
-  expect(trend.ma7).toBe(0);
-  expect(trend.ma30).toBe(0);
+  expect(trend.ma7).toBe(1_000_000);
+  expect(trend.ma30).toBe(1_000_000);
 });
 
 test("analyzeTrend should handle empty data", () => {
@@ -626,9 +626,9 @@ test("generateReport should include trend columns with historicalData", () => {
   const report = generateReport(mockData);
 
   expect(report).toContain(
-    "| # | Model | Provider | Total | 7D Trend | Momentum | License | Price |"
+    "| # | Model | Provider | Total | Trend | Momentum | License | Price |"
   );
-  expect(report).toContain("7D Trend");
+  expect(report).toContain("Trend");
   expect(report).toContain("Momentum");
   expect(report).not.toContain("Prompt");
   expect(report).not.toContain("Completion");
@@ -684,6 +684,6 @@ test("generateReport should maintain original format without historicalData", ()
   expect(report).toContain("Completion");
   expect(report).toContain("Reasoning");
   expect(report).toContain("Categories");
-  expect(report).not.toContain("7D Trend");
+  expect(report).not.toContain("Trend | Momentum");
   expect(report).not.toContain("Momentum");
 });

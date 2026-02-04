@@ -23,6 +23,8 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   ]);
 }
 
+const HISTORICAL_TIMEOUT_MS = 90_000;
+const HISTORICAL_CANDIDATE_COUNT = 50;
 const DATE_PATTERN_SLASH = /(\d{1,2})\/(\d{1,2})\/(\d{4})/;
 const DATE_PATTERN_DASH = /(\d{4})-(\d{1,2})-(\d{1,2})/;
 const DATE_PATTERN_TEXT = /([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})/;
@@ -245,7 +247,9 @@ async function scrapeHistoricalDataForTopModels(
   const sortedByUsage = [...activities].sort(
     (a, b) => b.totalTokens - a.totalTokens
   );
-  const topModels = sortedByUsage.filter((a) => a.totalTokens > 0).slice(0, 20);
+  const topModels = sortedByUsage
+    .filter((a) => a.totalTokens > 0)
+    .slice(0, HISTORICAL_CANDIDATE_COUNT);
 
   for (let i = 0; i < topModels.length; i++) {
     const activity = topModels[i];
@@ -258,7 +262,7 @@ async function scrapeHistoricalDataForTopModels(
         await new Promise((r) => setTimeout(r, 500));
         const result = await withTimeout(
           scrapeModelHistoricalData(activity.modelId),
-          30_000
+          HISTORICAL_TIMEOUT_MS
         );
         if (result.dailyUsage.length > 0) {
           const filtered = filterToYesterday(result.dailyUsage);

@@ -171,26 +171,26 @@ export function analyzeTrend(dailyUsage: DailyTokenUsage[]): TrendAnalysis {
   const values = dailyUsage.map((d) => d.tokens);
   const sparkline = createSparkline(values);
 
-  const ma7 = calculateMovingAverage(values, 7);
-  const ma30 = calculateMovingAverage(values, 30);
+  const shortWindow = Math.min(7, values.length);
+  const longWindow = Math.min(30, values.length);
+  const ma7 = calculateMovingAverage(values, shortWindow);
+  const ma30 = calculateMovingAverage(values, longWindow);
 
   const ma7Latest = ma7.length > 0 ? (ma7.at(-1) ?? 0) : 0;
   const ma30Latest = ma30.length > 0 ? (ma30.at(-1) ?? 0) : 0;
 
   let changePercent = 0;
-  if (values.length >= 14) {
-    const recent7Avg =
-      values.slice(-7).reduce((sum, value) => sum + value, 0) / 7;
-    const prev7Avg =
-      values.slice(-14, -7).reduce((sum, value) => sum + value, 0) / 7;
-    if (prev7Avg > 0) {
-      changePercent = ((recent7Avg - prev7Avg) / prev7Avg) * 100;
-    }
-  } else {
-    const firstValue = values.at(0) ?? 0;
-    const lastValue = values.at(-1) ?? 0;
-    if (firstValue > 0) {
-      changePercent = ((lastValue - firstValue) / firstValue) * 100;
+  const comparisonWindow = Math.floor(values.length / 2);
+  if (comparisonWindow >= 1) {
+    const recentSlice = values.slice(-comparisonWindow);
+    const previousSlice = values.slice(0, comparisonWindow);
+    const recentAvg =
+      recentSlice.reduce((sum, value) => sum + value, 0) / recentSlice.length;
+    const prevAvg =
+      previousSlice.reduce((sum, value) => sum + value, 0) /
+      previousSlice.length;
+    if (prevAvg > 0) {
+      changePercent = ((recentAvg - prevAvg) / prevAvg) * 100;
     }
   }
 
@@ -211,26 +211,21 @@ export function analyzeTrend(dailyUsage: DailyTokenUsage[]): TrendAnalysis {
   };
 }
 
+function getYesterdayTokens(dailyUsage: DailyTokenUsage[] | undefined): number {
+  if (!dailyUsage || dailyUsage.length === 0) {
+    return 0;
+  }
+  return dailyUsage.at(-1)?.tokens ?? 0;
+}
+
 function getTrendDisplay(trend: TrendAnalysis): string {
   const sign = trend.changePercent > 0 ? "+" : "";
   return `${trend.sparkline} ${trend.direction}${sign}${trend.changePercent}%`;
 }
 
 function getMomentumIndicator(trend: TrendAnalysis): string {
-  if (trend.ma30 === 0) {
-    if (trend.changePercent > 50) {
-      return "🔥";
-    }
-    if (trend.changePercent > 10) {
-      return "📈";
-    }
-    if (trend.changePercent >= -10) {
-      return "→";
-    }
-    if (trend.changePercent > -50) {
-      return "📉";
-    }
-    return "⚠️";
+  if (trend.ma30 <= 0) {
+    return "→";
   }
 
   const ratio = trend.ma7 / trend.ma30;
@@ -258,7 +253,6 @@ function buildTrendTableRow(
   historicalData: Record<string, DailyTokenUsage[]> | undefined
 ): string {
   const provider = extractProvider(activity.modelId);
-  const total = formatTokenCount(activity.totalTokens);
   const license = getLicenseShort(licenses[model.id] || "Unknown");
   const inputPrice = formatPrice(model.pricing.prompt);
   const outputPrice = formatPrice(model.pricing.completion);
@@ -267,13 +261,16 @@ function buildTrendTableRow(
   const dailyUsage = historicalData?.[activity.modelId];
   let trendDisplay = "-";
   let momentumDisplay = "-";
+  let totalTokens = 0;
 
   if (dailyUsage && dailyUsage.length > 0) {
     const trend = analyzeTrend(dailyUsage);
     trendDisplay = getTrendDisplay(trend);
     momentumDisplay = getMomentumIndicator(trend);
+    totalTokens = getYesterdayTokens(dailyUsage);
   }
 
+  const total = formatTokenCount(totalTokens);
   return `| ${rank} | ${model.name} | ${provider} | ${total} | ${trendDisplay} | ${momentumDisplay} | ${license} | ${price} |`;
 }
 
@@ -316,17 +313,32 @@ export function generateReport(data: ReportData): string {
 
   const modelMap = new Map(models.map((m) => [m.id, m]));
 
-  const top20 = [...activities]
-    .filter((a) => a.totalTokens > 0)
-    .sort((a, b) => b.totalTokens - a.totalTokens)
-    .slice(0, 20);
-
   const hasHistoricalData =
     historicalData && Object.keys(historicalData).length > 0;
 
+  const historicalTop = hasHistoricalData
+    ? [...activities]
+        .map((activity) => {
+          const tokens = getYesterdayTokens(historicalData?.[activity.modelId]);
+          return { activity, tokens };
+        })
+        .filter((entry) => entry.tokens > 0)
+        .sort((a, b) => b.tokens - a.tokens)
+        .slice(0, 20)
+        .map((entry) => entry.activity)
+    : [];
+
+  const top20 =
+    historicalTop.length > 0
+      ? historicalTop
+      : [...activities]
+          .filter((a) => a.totalTokens > 0)
+          .sort((a, b) => b.totalTokens - a.totalTokens)
+          .slice(0, 20);
+
   if (hasHistoricalData) {
     lines.push(
-      "| # | Model | Provider | Total | 7D Trend | Momentum | License | Price |"
+      "| # | Model | Provider | Total | Trend | Momentum | License | Price |"
     );
     lines.push(
       "|---|-------|----------|-------|----------|----------|---------|-------|"
